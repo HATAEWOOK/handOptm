@@ -18,7 +18,7 @@ import json
 import cv2
 
 
-baseDir = './test_seq/self'
+baseDir = './self'
 handposeRoot = join(baseDir, 'predictedPose', 'onlyHandWorldCoordinate_uvd.json')
 recordDir = join(baseDir, 'record_multi', '220405_hand')
 
@@ -58,19 +58,18 @@ def readRecord(idx, mode, init_frame=30):
     return img_set
 
 
-def getMultiviewPose(dummy, MVHandposeSet, startIdx, saveMVFitDir, ref_idx):
+def getMultiviewPose(dummy, MVHandposeSet, ownrefhand_set, refIdx, startIdx, saveMVFitDir, ref_idx):
     num_views = len(MVHandposeSet)
     seq_len = len(MVHandposeSet[0])
-
     for idx in range(seq_len):
         MVHandpose = MVHandposeSet[:, idx]
+        ownrefhand = ownrefhand_set[:, idx]
         initPose = np.mean(MVHandpose, axis=0)
 
         # set larger weight on reference cam's prediction
         weight = np.ones((num_views, 1), dtype=np.float32) / 2.0
         weight[ref_idx] = 1.0
-
-        outputPose = lift2Dto3DMultiView(MVHandpose, initPose, weights=weight, outDir=saveMVFitDir)
+        outputPose = lift2Dto3DMultiView(MVHandpose, initPose, ownrefhand, refIdx, weights=weight, outDir=saveMVFitDir)
         curr_idx = int(startIdx+idx)
         newDict = {'sourceKPS': MVHandpose,
                    'fittedKPS': outputPose,
@@ -82,7 +81,7 @@ def getMultiviewPose(dummy, MVHandposeSet, startIdx, saveMVFitDir, ref_idx):
 
 def main(argv):
     ### initialize
-    saveMVFitDir = join(baseDir, 'multiviewFit')
+    saveMVFitDir = join(baseDir, 'multiviewFit_ref2')
     if not os.path.exists(saveMVFitDir):
         os.mkdir(saveMVFitDir)
 
@@ -91,11 +90,17 @@ def main(argv):
     ref_idx = 2
 
     source = getPredicedPoses()
-    handpose_0 = np.array(source['0_2'])
-    handpose_1 = np.array(source['1_2'])
-    handpose_2 = np.array(source['2_2'])
+    handpose_0 = np.array(source['0_%d'%ref_idx])
+    handpose_1 = np.array(source['1_%d'%ref_idx])
+    handpose_2 = np.array(source['2_%d'%ref_idx])
 
     handpose_set = np.array([handpose_0, handpose_1, handpose_2])
+
+    ownrefhand_0 = np.array(source['0_0'])
+    ownrefhand_1 = np.array(source['1_1'])
+    ownrefhand_2 = np.array(source['2_2'])
+
+    ownrefhand_set = np.array([ownrefhand_0, ownrefhand_1, ownrefhand_2])
 
     print("starting multi-view optimization...")
     numThreads = 1
@@ -105,7 +110,7 @@ def main(argv):
     for proc_index in range(numThreads):
         startIdx = proc_index * numFramesPerThread
         endIdx = min(startIdx + numFramesPerThread, numCandidateFrames)
-        args = ([], handpose_set[:, startIdx:endIdx], startIdx, saveMVFitDir, ref_idx)
+        args = ([], handpose_set[:, startIdx:endIdx], ownrefhand_set[:, startIdx:endIdx], ref_idx, startIdx, saveMVFitDir, ref_idx)
         proc = mlp.Process(target=getMultiviewPose, args=args)
 
         proc.start()

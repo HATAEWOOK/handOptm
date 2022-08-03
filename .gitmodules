@@ -1,0 +1,3 @@
+[submodule "optimizer/halo"]
+	path = optimizer/halo
+	url = https://github.com/korrawe/halo

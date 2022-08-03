@@ -1,8 +1,12 @@
 import numpy as np
+from numpy.linalg import norm 
+import sys
+sys.path.append('.')
+sys.path.append('..')
 import os
 import pickle
 import matplotlib.pyplot as plt
-from scipy.misc import imread, imsave
+from imageio import imread, imsave
 import argparse, json, yaml
 import cv2
 from mano.webuser.verts import verts_core
@@ -11,6 +15,9 @@ from sklearn.preprocessing import normalize
 import manoHandVis as manoVis
 from eval import utilsEval
 import open3d
+from utils.uvd_transform import uvdtouvd
+from scipy import optimize as optm
+
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -656,7 +663,7 @@ def lift2Dto3DMultiFrame(projPtsGT, camMat, filename, JVis=np.ones((21,), dtype=
     return np.stack(joints3DList, axis=0), fullposeList, betaList, transList, chGlobalPoseCoeff.r.copy(), mList
 
 
-def lift2Dto3DMultiView(MVpred, initPose, weights=None, camMat=None, relDepGT=None, isOpenGLCoord=False, outDir=None):
+def lift2Dto3DMultiView(MVpred, initPose, refPose, ref, weights=None, camMat=None, relDepGT=None, isOpenGLCoord=False, outDir=None):
     '''
 
     :param MVsource: multi-view handpose prediction (views, 21, 3)
@@ -676,12 +683,21 @@ def lift2Dto3DMultiView(MVpred, initPose, weights=None, camMat=None, relDepGT=No
     freeVars = [outputPose]
     # freeVars = freeVars + [additional var]
 
-    ### 2D joint loss ###
-    for i in range(numViews):
-        loss['2Djoint_%d'%(i)] = (outputPose[:, :-1] - MVpred[i][:, :-1]) * weights[i] * 1e1
+    ### camera extrinsic matrix ###
+    with open('./extrinsic.json', 'r') as f:
+        ext = json.load(f) #{'ref0', 'ref1', 'ref2'}
+    ### camera intrinsic matrix ###
+    Ks = np.load('./intrinsic.npy')
+
+    # ### 2D joint loss ###
+    # for i in range(numViews):
+    #     loss['2Djoint_%d'%(i)] = (outputPose[:, :-1] - MVpred[i][:, :-1]) * weights[i] * 1e1
     ### relative 3D joint loss ###
     for i in range(numViews):
-        loss['rel3D_%d'%(i)] = (outputPose - MVpred[i]) * weights[i] * 5e1
+        # loss['rel3D_%d'%(i)] = (outputPose - MVpred[i]) * weights[i] * 5e1
+        loss['2Dref_%d'%(i)] = (uvdtouvd(outputPose, Ks[ref], Ks[i], np.array(ext['ref%d'%(ref)][i])) - refPose[i]) * weights[i] * 5e1
+    for i in range(numViews):
+        loss['2Dref_%d'%(i)] = (uvdtouvd(outputPose, Ks[ref], Ks[i], np.array(ext['ref%d'%(ref)][i]))[:,:-1] - refPose[i][:,:-1]) * weights[i] * 1e1
 
     ### relative depth loss ###
     """
@@ -694,8 +710,8 @@ def lift2Dto3DMultiView(MVpred, initPose, weights=None, camMat=None, relDepGT=No
 
     def cbPass(_):
         pass
-
-    ch.minimize(loss, x0=freeVars, callback=cbPass, method='dogleg', options={'maxiter': 100})
+    
+    ch.minimize(loss, x0=freeVars, callback=cbPass, method='dogleg', options={'maxiter': 100, 'disp':True})
 
     return outputPose
 
