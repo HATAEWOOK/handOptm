@@ -79,17 +79,3 @@ def visualize(refined_joint, frame, refcam, Ks, ext, idx):
     ax2.scatter(joint['cam2'][:,0], joint['cam2'][:,1], s=1)
     fig.savefig('./results/%d.png'%(idx+1))
     plt.close(fig)
-
-def generate_gif(path):
-    img_list = glob.glob(path+'/*.png')
-    img_list.sort()
-    images = [Image.open(x) for x in img_list]
-
-    im = images[0]
-    im.save(path+'/out.gif', save_all = True, append_images=images[1:], loop=1, duration=100)
-    return Img(url=path+'/out.gif')
-
-if __name__ == '__main__':
-    path = './results'
-    gif = generate_gif(path)
-    display(gif)
